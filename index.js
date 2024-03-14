@@ -3,6 +3,9 @@ const fs = require('fs')
 const { mimeTypes } = require('./mime-types.js')
 const server = createServer(handleRequest)
 const port = 1234
+const limitedAccessURLs = [
+  '/index.html',
+]
 
 server.listen(port, notifyStart)
 
@@ -20,6 +23,15 @@ function handleRequest(request, response) {
 
 function serveFile(request, response) {
   if (request.url === '/') request.url = '/index.html'
+
+  if (limitedAccessURLs.includes(request.url)) {
+    const authorized = checkAuth(request)
+
+    if (!authorized) {
+      response.writeHead(301, { Location: '/lobby.html' }).end()
+      return
+    }
+  }
 
   const ext = request.url.split('.').pop()
   const type = mimeTypes[ext] || 'text/plain'
@@ -41,5 +53,9 @@ function handleAPI(request, response) {
 
 }
 
-
-
+function checkAuth(request) {
+  if (request.headers.cookie) {
+    return true
+  }
+  return false
+}
