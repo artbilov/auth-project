@@ -6,6 +6,8 @@ const port = 1234
 const limitedAccessURLs = [
   '/index.html',
 ]
+const users = []
+
 
 server.listen(port, notifyStart)
 
@@ -49,8 +51,43 @@ function serveFile(request, response) {
   })
 }
 
-function handleAPI(request, response) {
+async function handleAPI(request, response) {
+  const endpoint = request.url.replace('/api/', '')
 
+  response.setHeader('Content-Type', 'application/json; charset=utf-8')
+  
+  if (endpoint === 'register') {
+    const payload = JSON.parse(await getBody(request))
+    const { login, password } = payload
+
+    addUser(login, password)
+    response.end(JSON.stringify({ success: true }))
+  } else {
+    const payload = JSON.parse(await getBody(request))
+    const { login, password } = payload
+
+    const user = users.find(user => user.login === login && user.password === password)
+
+    if (user) {
+      response.end(JSON.stringify({ success: true }))
+    } else {
+      response.writeHead(401).end()
+    }
+  }
+}
+
+async function getBody(request) {
+  let body = ''
+  for await (const chunk of request) {
+    body += chunk
+  }
+  return body
+}
+
+function addUser(login, password) {
+  const user = { login, password }
+
+  users.push(user)
 }
 
 function checkAuth(request) {
