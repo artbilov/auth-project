@@ -7,8 +7,9 @@ const limitedAccessURLs = [
   '/index.html',
 ]
 const users = []
+const sessions = []
 
-users.push({ login: 'a', password: 'b' })
+users.push({ id: generateId(), login: 'a', password: 'b' })
 
 server.listen(port, notifyStart)
 
@@ -71,7 +72,12 @@ async function handleAPI(request, response) {
     const user = users.find(user => user.login === login && user.password === password)
 
     if (user) {
-      response.setHeader('Set-Cookie', `login=${login}; Path=/; Max-Age=3600; HttpOnly`)
+      const token = generateToken()
+      const id = generateId()
+
+      sessions.push({ id, userId: user.id, token })
+
+      response.setHeader('Set-Cookie', `token=${token}; Path=/; Max-Age=3600; HttpOnly`)
       response.end(JSON.stringify({ success: true }))
     } else {
       response.writeHead(401).end()
@@ -83,8 +89,38 @@ async function handleAPI(request, response) {
 
   } else if (endpoint === 'users') {
     response.end(JSON.stringify(users))
+
+  } else if (endpoint === 'user') {
+    const payload = JSON.parse(await getBody(request))
+    const { login } = payload
+    const index = users.findIndex(user => user.login === login)
+
+    if (index !== -1) {
+      users.splice(index, 1)
+      response.end(JSON.stringify({ success: true }))
+    } else {
+      response.writeHead(404).end()
+    }
+
+  } else if (endpoint === 'sessions') {
+    const result = sessions.map(session => ({ login: users.find(user => user.id === session.userId).login, token: session.token }))
+    
+    response.end(JSON.stringify(result))
+
+  } else if (endpoint === 'session') {
+    const payload = JSON.parse(await getBody(request))
+    const { token } = payload
+    const index = sessions.findIndex(session => session.token === token)
+
+    if (index !== -1) {
+      sessions.splice(index, 1)
+      response.end(JSON.stringify({ success: true }))
+    } else {
+      response.writeHead(404).end()
+    }
   }
 }
+
 
 async function getBody(request) {
   let body = ''
@@ -95,7 +131,8 @@ async function getBody(request) {
 }
 
 function addUser(login, password) {
-  const user = { login, password }
+  const id = generateId()
+  const user = { id, login, password }
 
   users.push(user)
 }
@@ -107,3 +144,19 @@ function checkAuth(request) {
   return false
 }
 
+function generateId() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36)
+}
+
+function generateToken() {
+  const source = 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+  let token = ''
+
+  for (let i = 0; i < 32; i++) {
+    if (i % 5 === 0 && i !== 0) token += '-'
+
+    token += source[Math.floor(Math.random() * source.length)]
+  }
+
+  return token
+}
