@@ -2,12 +2,13 @@ const { createServer } = require('http')
 const fs = require('fs')
 const { mimeTypes } = require('./mime-types.js')
 const server = createServer(handleRequest)
-const port = 1234
+const port = 2222
 const limitedAccessURLs = [
   '/index.html',
 ]
 const users = []
 
+users.push({ login: 'a', password: 'b' })
 
 server.listen(port, notifyStart)
 
@@ -55,24 +56,33 @@ async function handleAPI(request, response) {
   const endpoint = request.url.replace('/api/', '')
 
   response.setHeader('Content-Type', 'application/json; charset=utf-8')
-  
+
   if (endpoint === 'register') {
     const payload = JSON.parse(await getBody(request))
     const { login, password } = payload
 
     addUser(login, password)
     response.end(JSON.stringify({ success: true }))
-  } else {
+
+  } else if (endpoint === 'login') {
     const payload = JSON.parse(await getBody(request))
     const { login, password } = payload
 
     const user = users.find(user => user.login === login && user.password === password)
 
     if (user) {
+      response.setHeader('Set-Cookie', `login=${login}; Path=/; Max-Age=3600; HttpOnly`)
       response.end(JSON.stringify({ success: true }))
     } else {
       response.writeHead(401).end()
     }
+
+  } else if (endpoint === 'logout') {
+    response.setHeader('Set-Cookie', 'login=; Path=/; Max-Age=0; HttpOnly')
+    response.end(JSON.stringify({ success: true }))
+
+  } else if (endpoint === 'users') {
+    response.end(JSON.stringify(users))
   }
 }
 
@@ -96,3 +106,4 @@ function checkAuth(request) {
   }
   return false
 }
+
