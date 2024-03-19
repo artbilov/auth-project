@@ -1,0 +1,14 @@
+[
+  {
+    "id": "zyow26n80jnltyto2i1",
+    "login": "a",
+    "hash": "$argon2id$v=19$m=65536,t=3,p=4$hpye6m75lOE4q/tP8a7/HA$myq24YWzfXtP6WOoxkgaZLh9oYCOniDV6sQlXegAieM",
+    "role": "admin"
+  },
+  {
+    "id": "8zx9sw678gltytokqu",
+    "login": "c",
+    "hash": "$argon2id$v=19$m=65536,t=3,p=4$Vt5VUVnKSWwE1ViyaaMXCQ$OiIQ1YUnLK7AZpQY3RA3LXFAgl8IJh1MgXtFkgZWm1A",
+    "role": "user"
+  }
+]

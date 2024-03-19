@@ -3,6 +3,7 @@ const [userTable, sessionTable] = document.querySelectorAll('table')
 
 logoutBtn.onclick = logOut
 userTable.onclick = handleDeleteUser
+userTable.onchange = handleUpdateUser
 sessionTable.onclick = handleDeleteSession
 
 getUsers().then(showUsers)
@@ -24,6 +25,24 @@ async function handleDeleteUser(event) {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ login }),
+    })
+
+    if (response.ok) {
+      getUsers().then(showUsers)
+      getSessions().then(showSessions)
+    }
+  }
+}
+
+async function handleUpdateUser(event) {
+  if (event.target.tagName === 'SELECT') {
+    const row = event.target.closest('tr')
+    const login = row.querySelector('td').textContent
+    const role = event.target.value
+    const response = await fetch('/api/user', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login, role }),
     })
 
     if (response.ok) {
@@ -80,7 +99,13 @@ function buildUserRow(user) {
   return `
     <tr>
       <td>${user.login}</td>
-      <td>${user.password}</td>
+      <td>${user.hash}</td>
+      <td>
+        <select>
+          <option ${user.role === 'admin' ? 'selected' : ''}>admin</option>
+          <option ${user.role === 'user' ? 'selected' : ''}>user</option>
+        </select>
+      </td>
       <td><button class="delete">Delete</button></td>
     </tr>
   `

@@ -1,5 +1,6 @@
 const { createServer } = require('http')
 const fs = require('fs')
+const { hash, verify } = require('argon2')
 const { mimeTypes } = require('./mime-types.js')
 const server = createServer(handleRequest)
 const port = 2222
@@ -9,7 +10,7 @@ const limitedAccessURLs = [
 const users = []
 const sessions = []
 
-users.push({ id: generateId(), login: 'a', password: 'b' })
+loadData()
 
 server.listen(port, notifyStart)
 
@@ -18,6 +19,8 @@ function notifyStart() {
 }
 
 function handleRequest(request, response) {
+  console.log(request.method, request.url)
+
   if (request.url.startsWith('/api/')) {
     handleAPI(request, response)
   } else {
@@ -62,20 +65,19 @@ async function handleAPI(request, response) {
     const payload = JSON.parse(await getBody(request))
     const { login, password } = payload
 
-    addUser(login, password)
+    await addUser(login, password)
     response.end(JSON.stringify({ success: true }))
 
   } else if (endpoint === 'login') {
     const payload = JSON.parse(await getBody(request))
     const { login, password } = payload
 
-    const user = users.find(user => user.login === login && user.password === password)
+    const user = users.find(user => user.login === login)
 
-    if (user) {
-      const token = generateToken()
-      const id = generateId()
+    const valid = await verify(user.hash, password)
 
-      sessions.push({ id, userId: user.id, token })
+    if (valid) {
+      const token = startSession(user)
 
       response.setHeader('Set-Cookie', `token=${token}; Path=/; Max-Age=3600; HttpOnly`)
       response.end(JSON.stringify({ success: true }))
@@ -84,43 +86,50 @@ async function handleAPI(request, response) {
     }
 
   } else if (endpoint === 'logout') {
-    response.setHeader('Set-Cookie', 'login=; Path=/; Max-Age=0; HttpOnly')
+    const cookie = parseCookie(request)
+    const { token } = cookie
+
+    endSession(token)
+
+    response.setHeader('Set-Cookie', 'token=; Path=/; Max-Age=0; HttpOnly')
     response.end(JSON.stringify({ success: true }))
 
   } else if (endpoint === 'users') {
     response.end(JSON.stringify(users))
 
   } else if (endpoint === 'user') {
-    const payload = JSON.parse(await getBody(request))
-    const { login } = payload
-    const index = users.findIndex(user => user.login === login)
+    if (request.method === 'DELETE') {
+      const payload = JSON.parse(await getBody(request))
+      const { login } = payload
 
-    if (index !== -1) {
-      users.splice(index, 1)
+      deleteUser(login)
+
       response.end(JSON.stringify({ success: true }))
-    } else {
-      response.writeHead(404).end()
+    } else if (request.method === 'PUT') {
+      const payload = JSON.parse(await getBody(request))
+      const { login, role } = payload
+
+      updateUser(login, role)
+
+      response.end(JSON.stringify({ success: true }))
     }
 
   } else if (endpoint === 'sessions') {
     const result = sessions.map(session => ({ login: users.find(user => user.id === session.userId).login, token: session.token }))
-    
+
     response.end(JSON.stringify(result))
 
   } else if (endpoint === 'session') {
-    const payload = JSON.parse(await getBody(request))
-    const { token } = payload
-    const index = sessions.findIndex(session => session.token === token)
+    if (request.method === 'DELETE') {
+      const payload = JSON.parse(await getBody(request))
+      const { token } = payload
 
-    if (index !== -1) {
-      sessions.splice(index, 1)
+      endSession(token)
+
       response.end(JSON.stringify({ success: true }))
-    } else {
-      response.writeHead(404).end()
     }
   }
 }
-
 
 async function getBody(request) {
   let body = ''
@@ -130,18 +139,56 @@ async function getBody(request) {
   return body
 }
 
-function addUser(login, password) {
+async function addUser(login, password) {
   const id = generateId()
-  const user = { id, login, password }
+  const hash = await generateHash(password)
+  const noAdmins = users.every(user => user.role !== 'admin')
+  const role = noAdmins ? 'admin' : 'user'
+  const user = { id, login, hash, role }
 
   users.push(user)
+
+  saveUsers()
+}
+
+function deleteUser(login) {
+  const index = users.findIndex(user => user.login === login)
+  const id = users[index]?.id
+
+  if (id) {
+    users.splice(index, 1)
+    saveUsers()
+
+    sessions.filter(session => session.userId === id)
+      .forEach(session => endSession(session.token))
+    saveSessions()
+  }
+}
+
+function updateUser(login, role) {
+  const user = users.find(user => user.login === login)
+  
+  if (user) user.role = role
+}
+
+function startSession(user) {
+  const id = generateId()
+  const token = generateToken()
+
+  sessions.push({ id, userId: user.id, token })
+
+  saveSessions()
+
+  return token
 }
 
 function checkAuth(request) {
-  if (request.headers.cookie) {
-    return true
-  }
-  return false
+  const cookie = parseCookie(request)
+  const { token } = cookie
+
+  const session = sessions.find(session => session.token === token)
+
+  return !!session
 }
 
 function generateId() {
@@ -159,4 +206,52 @@ function generateToken() {
   }
 
   return token
+}
+
+function loadData() {
+  try {
+    fs.mkdirSync('data')
+  } catch { }
+
+  try {
+    users.push(...JSON.parse(fs.readFileSync('data/users.json')))
+  } catch { }
+
+  try {
+    sessions.push(...JSON.parse(fs.readFileSync('data/sessions.json')))
+  } catch { }
+}
+
+function saveUsers() {
+  try {
+    fs.writeFileSync('data/users.json', JSON.stringify(users, null, 2))
+  } catch (error) {
+    console.error(error)
+  }
+}
+
+function saveSessions() {
+  try {
+    fs.writeFileSync('data/sessions.json', JSON.stringify(sessions, null, 2))
+  } catch (error) {
+    console.error(error)
+  }
+}
+
+function parseCookie(request) {
+  const cookie = Object.fromEntries((request.headers.cookie || '').split('; ').map(str => str.split('=')))
+
+  return cookie
+}
+
+function endSession(token) {
+  const index = sessions.findIndex(session => session.token === token)
+
+  if (index !== -1) sessions.splice(index, 1)
+
+  saveSessions()
+}
+
+function generateHash(password) {
+  return hash(password)
 }
